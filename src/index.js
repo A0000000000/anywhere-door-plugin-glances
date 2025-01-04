@@ -5,122 +5,6 @@ import constant from './constant.js'
 import cmdConstant from './cmd_constant.js'
 import fs from 'fs'
 
-const host = process.env.HOST || constant.DEFAULT_HOST
-const port = process.env.PORT ||  constant.DEFAULT_PORT
-const prefix = process.env.PREFIX || constant.DEFAULT_PREFIX
-const username = process.env.USERNAME || constant.DEFAULT_USERNAME
-const token = process.env.TOKEN || constant.DEFAULT_TOKEN
-const pluginName = process.env.PLUGIN_NAME || constant.DEFAULT_PLUGIN_NAME
-
-async function processCommand(source, rawCmd) {
-    const cmds = rawCmd.split(' ')
-    if (cmds.length >= 1) {
-        const method = cmds[0]
-        if (method === 'help') {
-            fs.readFile('src/help', 'utf8', (err, data) => {
-                if (err) {
-                    console.log(err)
-                    return
-                }
-                sendRequest(source, data)
-            })
-            return
-        }
-        const config = JSON.parse((await axios.post(constant.REQUEST_CONFIG_URL(host, port, prefix), {
-            name: pluginName,
-            config_key: 'hosts'
-        }, {
-            headers: {
-                token,
-                username
-            }
-        })).data.data.config_value)
-        switch (method) {
-            case 'getMachineList':
-                let res = '机器列表:'
-                for (const i in config) {
-                    res = res + '\n' + `第${Number(i) + 1}台机器: ${config[i].name}`
-                }
-                sendRequest(source, res)
-                break
-            case 'getInfo':
-                if (cmds.length > 1) {
-                    const machineName = cmds[1]
-                    let machineInfo = null
-                    for (const item of config) {
-                        if (item.name === machineName) {
-                            machineInfo = item
-                        }
-                    }
-                    if (machineInfo === null) {
-                        sendRequest(source, cmdConstant.RESULT_NO_SUCH_MACHINE)
-                        return
-                    }
-                    const basicMachineInfo = await getBasicMachineInfo(machineInfo.host)
-                    sendRequest(source, `机器${machineInfo.name}信息如下:\n${basicMachineInfo}`)
-                } else {
-                    let res = '所有机器信息:\n----------'
-                    for (const item of config) {
-                        res = res + `\n机器${item.name}信息如下:\n${await getBasicMachineInfo(item.host)}\n----------`
-                    }
-                    sendRequest(source, res)
-                }
-                break
-            case 'getStatus':
-                if (cmds.length > 1) {
-                    const machineName = cmds[1]
-                    let machineInfo = null
-                    for (const item of config) {
-                        if (item.name === machineName) {
-                            machineInfo = item
-                        }
-                    }
-                    if (machineInfo === null) {
-                        sendRequest(source, cmdConstant.RESULT_NO_SUCH_MACHINE)
-                        return
-                    }
-                    const basicMachineInfo = await getBasicMachineStatus(machineInfo.host)
-                    sendRequest(source, `机器${machineInfo.name}状态如下:\n${basicMachineInfo}`)
-                } else {
-                    let res = '所有机器状态:\n----------'
-                    for (const item of config) {
-                        res = res + `\n机器${item.name}状态如下:\n${await getBasicMachineStatus(item.host)}\n----------`
-                    }
-                    sendRequest(source, res)
-                }
-                break
-            case 'getSensors':
-                if (cmds.length > 1) {
-                    const machineName = cmds[1]
-                    let machineInfo = null
-                    for (const item of config) {
-                        if (item.name === machineName) {
-                            machineInfo = item
-                        }
-                    }
-                    if (machineInfo === null) {
-                        sendRequest(source, cmdConstant.RESULT_NO_SUCH_MACHINE)
-                        return
-                    }
-                    const basicMachineInfo = await getBasicMachineSensors(machineInfo.host)
-                    sendRequest(source, `机器${machineInfo.name}传感器信息如下:\n${basicMachineInfo}`)
-                } else {
-                    let res = '所有机器传感器信息:\n----------'
-                    for (const item of config) {
-                        res = res + `\n机器${item.name}传感器信息如下:\n${await getBasicMachineSensors(item.host)}\n----------`
-                    }
-                    sendRequest(source, res)
-                }
-                break
-            default:
-                sendRequest(source, cmdConstant.RESULT_NO_SUCH_CMD)
-                return
-        }
-    } else {
-        sendRequest(source, cmdConstant.RESULT_PARAMS_ERROR)
-    }
-}
-
 async function getBasicMachineInfo(host) {
     const quicklook = (await axios.get(`${host}/quicklook`)).data
     const mem = (await axios.get(`${host}/mem`)).data
@@ -179,24 +63,127 @@ async function getBasicMachineSensors(host) {
     }
 }
 
-function sendRequest(target, data) {
-    axios.post(constant.REQUEST_URL(host, port, prefix), {
+async function processCommand(axiosControlPlane, raw, extend) {
+    const cmds = raw.split(' ')
+    if (cmds.length >= 1) {
+        const method = cmds[0]
+        if (method === 'help') {
+            return await new Promise((resolve, reject) => {
+                fs.readFile('src/help', 'utf8', (err, data) => {
+                    if (err) {
+                        reject(err)
+                    } else {
+                        resolve(data)
+                    }
+                })
+            })
+        }
+        const config = JSON.parse((await axiosControlPlane.post(constant.PLUGIN_CONFIG_URL, {
+            name: extend[constant.PLUGIN_NAME],
+            config_key: 'hosts'
+        })).data.data.config_value)
+
+        switch (method) {
+            case 'getMachineList':
+                let res = '机器列表:'
+                for (const i in config) {
+                    res = res + '\n' + `第${Number(i) + 1}台机器: ${config[i].name}`
+                }
+                return res
+            case 'getInfo':
+                if (cmds.length > 1) {
+                    const machineName = cmds[1]
+                    let machineInfo = null
+                    for (const item of config) {
+                        if (item.name === machineName) {
+                            machineInfo = item
+                        }
+                    }
+                    if (machineInfo === null) {
+                        return cmdConstant.RESULT_NO_SUCH_MACHINE
+                    }
+                    const basicMachineInfo = await getBasicMachineInfo(machineInfo.host)
+                    return`机器${machineInfo.name}信息如下:\n${basicMachineInfo}`
+                } else {
+                    let res = '所有机器信息:\n----------'
+                    for (const item of config) {
+                        res = res + `\n机器${item.name}信息如下:\n${await getBasicMachineInfo(item.host)}\n----------`
+                    }
+                    return res
+                }
+            case 'getStatus':
+                if (cmds.length > 1) {
+                    const machineName = cmds[1]
+                    let machineInfo = null
+                    for (const item of config) {
+                        if (item.name === machineName) {
+                            machineInfo = item
+                        }
+                    }
+                    if (machineInfo === null) {
+                        return cmdConstant.RESULT_NO_SUCH_MACHINE
+                    }
+                    const basicMachineInfo = await getBasicMachineStatus(machineInfo.host)
+                    return `机器${machineInfo.name}状态如下:\n${basicMachineInfo}`
+                } else {
+                    let res = '所有机器状态:\n----------'
+                    for (const item of config) {
+                        res = res + `\n机器${item.name}状态如下:\n${await getBasicMachineStatus(item.host)}\n----------`
+                    }
+                    return res
+                }
+            case 'getSensors':
+                if (cmds.length > 1) {
+                    const machineName = cmds[1]
+                    let machineInfo = null
+                    for (const item of config) {
+                        if (item.name === machineName) {
+                            machineInfo = item
+                        }
+                    }
+                    if (machineInfo === null) {
+                        return cmdConstant.RESULT_NO_SUCH_MACHINE
+                    }
+                    const basicMachineInfo = await getBasicMachineSensors(machineInfo.host)
+                    return `机器${machineInfo.name}传感器信息如下:\n${basicMachineInfo}`
+                } else {
+                    let res = '所有机器传感器信息:\n----------'
+                    for (const item of config) {
+                        res = res + `\n机器${item.name}传感器信息如下:\n${await getBasicMachineSensors(item.host)}\n----------`
+                    }
+                    return res
+                }
+            default:
+                return cmdConstant.RESULT_NO_SUCH_CMD
+        }
+    } else {
+        return cmdConstant.RESULT_PARAMS_ERROR
+    }
+}
+
+async function sendRequest(axiosControlPlane, pluginName, target, data) {
+    return await axiosControlPlane.post(constant.PLUGIN_URL, {
         name: pluginName,
         target: target,
         data: data
-    }, {
-        headers: {
-            token,
-            username
-        }
-    }).then(resp => {
-        console.log(resp.data)
-    }).catch(err => {
-        console.log(err)
     })
 }
 
 function main() {
+    const host = process.env.HOST
+    const port = process.env.PORT
+    const prefix = process.env.PREFIX || ''
+    const username = process.env.USERNAME
+    const token = process.env.TOKEN
+    const pluginName = process.env.PLUGIN_NAME
+
+    const axiosControlPlane = axios.create({
+        baseURL: constant.CONTROL_PLANE_BASE_REQUEST_URL(host, port, prefix),
+        headers: {
+            token, username
+        }
+    })
+
     const app = new Koa()
     const router = new Router()
     router.post(constant.PLUGIN_URL, ctx => {
@@ -218,7 +205,22 @@ function main() {
                     message: constant.ERROR_MESSAGE_TOKEN_INVALID
                 })
             }
-            processCommand(name, raw).then()
+            const extend = {}
+            extend[constant.PLUGIN_NAME] = pluginName
+            processCommand(axiosControlPlane, raw, extend).then(data => {
+                sendRequest(axiosControlPlane, pluginName, name, data).then(res => {
+                    console.log(res)
+                }).catch(err => {
+                    console.log(err)
+                })
+            }).catch(err => {
+                console.log(err)
+                sendRequest(axiosControlPlane, pluginName, name, err.message).then(res => {
+                    console.log(res)
+                }).catch(err => {
+                    console.log(err)
+                })
+            })
             ctx.response.body = JSON.stringify({
                 code: constant.ERROR_CODE_SUCCESS,
                 message: constant.ERROR_MESSAGE_SUCCESS
