@@ -3,6 +3,7 @@ import Koa from 'koa'
 import Router from 'koa-router'
 import constant from './constant.js'
 import cmdConstant from './cmd_constant.js'
+import fs from 'fs'
 
 const host = process.env.HOST || constant.DEFAULT_HOST
 const port = process.env.PORT ||  constant.DEFAULT_PORT
@@ -16,8 +17,13 @@ async function processCommand(source, rawCmd) {
     if (cmds.length >= 1) {
         const method = cmds[0]
         if (method === 'help') {
-            const help = `Glances 指令帮助\n1. getMachineList: 获取机器列表\n2. getInfo [name]: 获取名字叫name机器的信息, 不传name则获取所有机器信息\n3. getStatus [name]: 获取名字叫name机器的简略状态, 不传name则获取所有机器简略状态\n4. getSensors [name]: 获取名字叫name机器的传感器信息, 不传name则获取所有机器传感器信息`
-            sendRequest(source, help)
+            fs.readFile('src/help', 'utf8', (err, data) => {
+                if (err) {
+                    console.log(err)
+                    return
+                }
+                sendRequest(source, data)
+            })
             return
         }
         const config = JSON.parse((await axios.post(constant.REQUEST_CONFIG_URL(host, port, prefix), {

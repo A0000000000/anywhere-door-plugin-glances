@@ -1,0 +1,5 @@
+Glances 指令帮助
+1. getMachineList: 获取机器列表
+2. getInfo [name]: 获取名字叫name机器的信息, 不传name则获取所有机器信息
+3. getStatus [name]: 获取名字叫name机器的简略状态, 不传name则获取所有机器简略状态
+4. getSensors [name]: 获取名字叫name机器的传感器信息, 不传name则获取所有机器传感器信息
