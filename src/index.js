@@ -4,11 +4,12 @@ import Router from 'koa-router'
 import constant from './constant.js'
 import cmdConstant from './cmd_constant.js'
 import cmdList from './cmd_list.js'
+import LogContext from './log.js'
 
-async function processCommand(axiosControlPlane, raw, extend) {
+async function processCommand(raw, extend) {
     const cmds = raw.split(' ')
     if (cmds.length >= 1) {
-        const config = JSON.parse((await axiosControlPlane.post(constant.PLUGIN_CONFIG_URL, {
+        const config = JSON.parse((await extend.axiosControlPlane.post(constant.PLUGIN_CONFIG_URL, {
             name: extend[constant.PLUGIN_NAME],
             config_key: 'hosts'
         })).data.data.config_value)
@@ -22,8 +23,8 @@ async function processCommand(axiosControlPlane, raw, extend) {
     }
 }
 
-async function sendRequest(axiosControlPlane, pluginName, target, data) {
-    return await axiosControlPlane.post(constant.PLUGIN_URL, {
+async function sendRequest(pluginName, target, data, extend) {
+    return await extend.axiosControlPlane.post(constant.PLUGIN_URL, {
         name: pluginName,
         target: target,
         data: data
@@ -44,6 +45,7 @@ function main() {
             token, username
         }
     })
+    const logCtx = new LogContext(axiosControlPlane, pluginName)
 
     const app = new Koa()
     const router = new Router()
@@ -66,17 +68,20 @@ function main() {
                     message: constant.ERROR_MESSAGE_TOKEN_INVALID
                 })
             }
-            const extend = {}
+            const extend = {
+                axiosControlPlane,
+                logCtx
+            }
             extend[constant.PLUGIN_NAME] = pluginName
-            processCommand(axiosControlPlane, raw, extend).then(data => {
-                sendRequest(axiosControlPlane, pluginName, name, data).then(res => {
+            processCommand(raw, extend).then(data => {
+                sendRequest(pluginName, name, data, extend).then(res => {
                     console.log(res)
                 }).catch(err => {
                     console.log(err)
                 })
             }).catch(err => {
                 console.log(err)
-                sendRequest(axiosControlPlane, pluginName, name, err.message).then(res => {
+                sendRequest(pluginName, name, err.message, extend).then(res => {
                     console.log(res)
                 }).catch(err => {
                     console.log(err)
